@@ -19,15 +19,12 @@ jobs:
         submodules: true
     
     - name: Grant execute permission to build script
-      if: matrix.platform == 'linux'
       run: chmod +x build-linux.sh
 
     - name: Build for Linux
-      if: matrix.platform == 'linux'
       run: sudo DEBIAN_FRONTEND=noninteractive ./build-linux.sh -y
 
     - name: Upload Linux Build Artifact
-      if: matrix.platform == 'linux'
       uses: actions/upload-artifact@v4
       with:
         name: Release-Linux-x64
@@ -68,7 +65,6 @@ jobs:
       run: |
         mkdir -p release_assets
         
-        # Package Linux x64 build
         if [ -f "./artifacts/Release-Linux-x64/CasioEmuMsvc" ]; then
           cd "./artifacts/Release-Linux-x64"
           zip "../../release_assets/linux-x64-${{ env.COMMIT_HASH }}.zip" CasioEmuMsvc
