@@ -1,0 +1,104 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ "stable" ]
+  pull_request:
+    branches: [ "stable" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4.1.7
+      with:
+        fetch-depth: 1
+        submodules: true
+    
+    - name: Grant execute permission to build script
+      if: matrix.platform == 'linux'
+      run: chmod +x build-linux.sh
+
+    - name: Build for Linux
+      if: matrix.platform == 'linux'
+      run: sudo DEBIAN_FRONTEND=noninteractive ./build-linux.sh -y
+
+    - name: Upload Linux Build Artifact
+      if: matrix.platform == 'linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: Release-Linux-x64
+        path: build_web/
+        if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4.1.7
+      with:
+        fetch-depth: 0
+
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+
+    - name: Generate Release Details
+      id: release_details
+      run: |
+        SHORT_HASH=$(git rev-parse --short HEAD)
+        echo "COMMIT_HASH=$SHORT_HASH" >> $GITHUB_ENV
+        echo "RELEASE_TAG=stable-$(date +'%Y%m%d%H%M%S')-$SHORT_HASH" >> $GITHUB_ENV
+        echo "RELEASE_DATE=$(date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+        
+        CHANGELOG_CONTENT=$(git log -5 --pretty=format:"- %s (%h)" --abbrev-commit)
+        echo "CHANGELOG<<EOF" >> $GITHUB_ENV
+        echo "$CHANGELOG_CONTENT" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+
+    - name: Prepare Release Assets
+      run: |
+        mkdir -p release_assets
+        
+        # Package Linux x64 build
+        if [ -f "./artifacts/Release-Linux-x64/CasioEmuMsvc" ]; then
+          cd "./artifacts/Release-Linux-x64"
+          zip "../../release_assets/linux-x64-${{ env.COMMIT_HASH }}.zip" CasioEmuMsvc
+          cd ../..
+        fi
+        
+        ls -la release_assets/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2.2.2
+      with:
+        tag_name: ${{ env.RELEASE_TAG }}
+        name: '🚧 Auto Build ${{ env.RELEASE_TAG }} (Pre-release)'
+        body: |
+          ## ⚠️ Pre-release Auto Build
+          
+          > **Warning**: This is an automated pre-release build for testing purposes. 
+          > It may contain bugs and is not recommended for production use.
+          
+          **Build Date:** ${{ env.RELEASE_DATE }}
+          **Commit:** [${{ env.COMMIT_HASH }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+          
+          ### Recent Changes
+          ${{ env.CHANGELOG }}
+          
+          ### Notes
+          - This is an automated build from the latest commit on the stable branch
+          - Use at your own risk - this is a development build
+        files: release_assets/*
+        draft: false
+        prerelease: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
